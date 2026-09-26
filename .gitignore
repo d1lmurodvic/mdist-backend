@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Environment — never commit real values (DEVELOPMENT_RULES.md §6)
+.env
+.env.local
+.env.*.local
+
+# Database (SQLite files are generated from migrations)
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Uploaded documents (local storage driver; runtime data only)
+uploads/*
+!uploads/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

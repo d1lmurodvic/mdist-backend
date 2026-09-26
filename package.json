@@ -1,0 +1,22 @@
+{
+  "name": "ifrsmart-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IFRSmart backend — The Smart Future of Accounting. AI-powered financial operating system for SMBs.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "migrate": "node src/db/cli.js migrate",
+    "migrate:status": "node src/db/cli.js status",
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "test:watch": "node --test --watch \"tests/**/*.test.js\""
+  },
+  "dependencies": {
+    "zod": "^4.1.13"
+  }
+}

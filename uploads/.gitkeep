@@ -1,0 +1,2 @@
+// Keeps the uploads directory in version control while ignoring its contents.
+// The local storage driver creates company subdirectories at runtime.
