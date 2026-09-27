@@ -59,6 +59,34 @@ test('a successful login clears the failure count for that email', async (t) => 
   assert.equal((await login(request, 'owner@example.com', PASSWORD)).status, 200);
 });
 
+test('parallel login attempts cannot get past the email limit', async (t) => {
+  const { request, close } = await createTestApp();
+  t.after(close);
+  await registerUser(request, { email: 'owner@example.com' });
+
+  const attempts = 40;
+  const responses = await Promise.all(
+    Array.from({ length: attempts }, (_, i) => login(request, 'owner@example.com', i === attempts - 1 ? PASSWORD : `wrong ${i}`)),
+  );
+  const statuses = responses.map((response) => response.status);
+  const passed = statuses.filter((status) => status !== 429).length;
+  assert.ok(passed <= AUTH_RATE_LIMITS.loginFailuresPerEmail.limit, `${passed} attempts reached the password check`);
+  responses.filter((response) => response.status === 429).forEach((response) => assertRateLimited(response));
+});
+
+test('a successful login does not count against the per-IP failure limit', async (t) => {
+  const { request, close } = await createTestApp();
+  t.after(close);
+  await registerUser(request, { email: 'owner@example.com' });
+
+  for (let i = 0; i < AUTH_RATE_LIMITS.loginFailuresPerIp.limit + 5; i += 1) {
+    assert.equal((await login(request, 'owner@example.com', PASSWORD)).status, 200, `login ${i + 1}`);
+  }
+  for (let i = 0; i < AUTH_RATE_LIMITS.loginFailuresPerIp.limit - 1; i += 1) {
+    assert.equal((await login(request, `user${i}@example.com`, 'wrong')).status, 401, `failure ${i + 1}`);
+  }
+});
+
 test('failures across many emails from one IP hit the per-IP limit', async (t) => {
   const { request, close } = await createTestApp();
   t.after(close);
@@ -129,4 +157,32 @@ test('the limiter window expires on its own', () => {
 
   limiter.clear('k');
   assert.equal(limiter.retryAfterSeconds('k', 1), 0);
+});
+
+test('TRUST_PROXY: registrations are limited per forwarded client address, not per proxy', async (t) => {
+  const { request, close } = await createTestApp({ env: { TRUST_PROXY: 'true' } });
+  t.after(close);
+  const register = (i, ip) => request('POST', '/api/v1/auth/register', {
+    body: { email: `proxy${ip}-${i}@example.com`, password: PASSWORD, name: 'Proxy' },
+    headers: { 'X-Forwarded-For': `203.0.113.99, ${ip}` },
+  });
+  for (let i = 0; i < AUTH_RATE_LIMITS.registrationsPerIp.limit; i += 1) {
+    assert.equal((await register(i, '198.51.100.1')).status, 201, `attempt ${i + 1}`);
+  }
+  assertRateLimited(await register(99, '198.51.100.1'), AUTH_RATE_LIMITS.registrationsPerIp);
+  // Another client behind the same proxy is not affected.
+  assert.equal((await register(0, '198.51.100.2')).status, 201);
+});
+
+test('without TRUST_PROXY, X-Forwarded-For is ignored', async (t) => {
+  const { request, close } = await createTestApp();
+  t.after(close);
+  for (let i = 0; i < AUTH_RATE_LIMITS.registrationsPerIp.limit; i += 1) {
+    await request('POST', '/api/v1/auth/register', {
+      body: { email: `direct${i}@example.com`, password: PASSWORD, name: 'Direct' },
+      headers: { 'X-Forwarded-For': `198.51.100.${i}` },
+    });
+  }
+  const response = await request('POST', '/api/v1/auth/register', { body: { email: 'direct99@example.com', password: PASSWORD, name: 'Direct' } });
+  assertRateLimited(response, AUTH_RATE_LIMITS.registrationsPerIp);
 });

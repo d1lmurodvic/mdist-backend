@@ -152,6 +152,30 @@ test('company settings: owner-only, currency locked once records exist, fiscal c
   assert.equal((await ctx.call('GET', '/dashboard', undefined, member.token)).status, 200, 'members read financial screens');
 });
 
+test('demo data reset and removal keep the user\'s own accountant requests and assistant history', async (t) => {
+  const app = await createDocumentsApp();
+  t.after(app.close);
+  const { token } = await registerUser(app.request, { email: 'demo@a.example' });
+  await app.request('POST', '/api/v1/companies', { token, body: { name: 'Demo Workspace', currency: 'UZS' } });
+  const call = (method, path, body) => app.request(method, `/api/v1${path}`, { token, body });
+
+  const request = await call('POST', '/accountants/requests', { contactName: 'Owner', contactEmail: 'owner@a.example', topic: 'tax_preparation', description: 'Year-end help' });
+  assert.equal(request.status, 201, request.raw);
+  assert.equal((await call('POST', '/ai/assistant/messages', { message: 'What is my cash balance?' })).status, 201);
+
+  const kept = async (label) => {
+    assert.equal((await call('GET', '/accountants/requests')).data.length, 1, `${label}: accountant request kept`);
+    assert.equal((await call('GET', '/ai/assistant/messages')).meta.total, 2, `${label}: assistant history kept`);
+  };
+  assert.equal((await call('POST', '/companies/current/demo-data', {})).status, 200);
+  for (const document of (await call('GET', '/documents')).data) await settled(app.request, token, document.id);
+  assert.equal((await call('POST', '/companies/current/demo-data', {})).status, 200);
+  for (const document of (await call('GET', '/documents')).data) await settled(app.request, token, document.id);
+  await kept('after reset');
+  assert.equal((await call('DELETE', '/companies/current/demo-data')).status, 204);
+  await kept('after removal');
+});
+
 test('demo data: coherent, calculated, labelled, isolated, resettable and removable', async (t) => {
   const app = await createDocumentsApp();
   t.after(app.close);

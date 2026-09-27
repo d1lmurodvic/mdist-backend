@@ -195,6 +195,32 @@ test('confirming as an invoice creates a draft only — never sent, never paid, 
   assert.equal(db.getValue('SELECT count(*) FROM transactions'), 0);
 });
 
+test('deleting the record a document created frees the document to be confirmed again or deleted', async (t) => {
+  const { request, token, account, uploadDir, close } = await setup(staticAdapter(providerResult()));
+  t.after(close);
+  const vendor = await createContact(request, token, { name: 'Paper Supplies', type: 'vendor' });
+  const invoiceBody = { target: 'invoice', invoice: {
+    number: 'BILL-78', type: 'payable', contactId: vendor.id, issueDate: '2025-03-14', dueDate: '2025-04-13',
+    lineItems: [{ description: 'Coffee beans', quantity: 1, unitPrice: uzs(39200) }],
+  } };
+
+  // Invoice: confirm, delete the draft, then the document can be confirmed again.
+  const id = (await uploadFile(request, token)).data.id;
+  await settled(request, token, id);
+  const invoice = (await request('POST', `/api/v1/documents/${id}/confirm`, { token, body: invoiceBody })).data.invoice;
+  assert.equal((await request('DELETE', `/api/v1/invoices/${invoice.id}`, { token })).status, 204);
+  assert.deepEqual((await request('GET', `/api/v1/documents/${id}`, { token })).data.confirmation.invoiceId, null, 'the confirmation is kept with its id cleared');
+  const again = await request('POST', `/api/v1/documents/${id}/confirm`, { token, body: transactionBody(account) });
+  assert.equal(again.status, 201, again.raw);
+  assert.equal(again.data.document.confirmation.transactionId, again.data.transaction.id);
+
+  // Transaction: confirm, delete the transaction, then the document can be deleted.
+  assert.equal((await request('DELETE', `/api/v1/transactions/${again.data.transaction.id}`, { token })).status, 204);
+  assert.deepEqual((await request('GET', `/api/v1/documents/${id}`, { token })).data.confirmation.transactionId, null);
+  assert.equal((await request('DELETE', `/api/v1/documents/${id}`, { token })).status, 204);
+  assert.deepEqual(storedFiles(uploadDir), [], 'its file is removed too');
+});
+
 test('a document without a provider can still be confirmed from manually entered values', async (t) => {
   const app = await createDocumentsApp();
   t.after(app.close);

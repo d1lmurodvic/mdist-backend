@@ -47,15 +47,21 @@ export function createAuthController({ services, rateLimiter }) {
       const emailKey = ['login:email:' + email, AUTH_RATE_LIMITS.loginFailuresPerEmail];
       const ipKey = ['login:ip:' + ip, AUTH_RATE_LIMITS.loginFailuresPerIp];
       enforce([emailKey, ipKey]);
+      // Count the attempt before the password check awaits, so concurrent
+      // requests cannot all pass enforce() before the first failure lands.
+      // Attempts that turn out not to be failed logins are released.
+      rateLimiter.hit(emailKey[0], emailKey[1].windowMs);
+      rateLimiter.hit(ipKey[0], ipKey[1].windowMs);
 
       try {
         const { user, session } = await services.auth.login({ email, password, ip });
         rateLimiter.clear(emailKey[0]);
+        rateLimiter.release(ipKey[0]);
         return { data: { user, session } };
       } catch (error) {
-        if (error?.code === 'UNAUTHENTICATED') {
-          rateLimiter.hit(emailKey[0], emailKey[1].windowMs);
-          rateLimiter.hit(ipKey[0], ipKey[1].windowMs);
+        if (error?.code !== 'UNAUTHENTICATED') {
+          rateLimiter.release(emailKey[0]);
+          rateLimiter.release(ipKey[0]);
         }
         throw error;
       }

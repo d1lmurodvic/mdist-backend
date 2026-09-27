@@ -49,12 +49,16 @@ export function updateMemberRole(db, companyId, membershipId, role) {
  * Remove every business record of a company, keeping the company, its
  * members and its system Uncategorized category (demo data removal). Order
  * respects foreign keys. Returns the storage keys of removed documents.
+ *
+ * Assistant messages and accountant requests are kept: the demo seed never
+ * writes them and the load guard does not count them, so they are the user's
+ * own records even in a demo company.
  */
 export function clearCompanyData(db, companyId) {
   assertCompanyScope(companyId);
   const storageKeys = db.all('SELECT storage_key FROM documents WHERE company_id = ?', [companyId]).map((row) => row.storage_key);
   const tables = [
-    'notifications', 'insights', 'anomalies', 'forecasts', 'assistant_messages', 'accountant_requests',
+    'notifications', 'insights', 'anomalies', 'forecasts',
     'document_extractions', 'documents', 'idempotency_keys',
   ];
   for (const table of tables) db.run(`DELETE FROM ${table} WHERE company_id = ?`, [companyId]);

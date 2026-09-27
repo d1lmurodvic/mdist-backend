@@ -20,7 +20,7 @@ import { AppError, conflict, notFound, unprocessable, unsupportedMediaType } fro
 import { newId } from '../lib/ids.js';
 import { nowIsoTimestamp } from '../lib/dates.js';
 import { logger } from '../lib/logger.js';
-import { UPLOAD_TYPES, detectMimeType, displayFilename, extensionOf } from '../lib/fileTypes.js';
+import { UPLOAD_TYPES, declaredTypeMatches, detectMimeType, displayFilename, extensionOf } from '../lib/fileTypes.js';
 import { storageKeyFor } from '../storage/localStorage.js';
 import { ExtractionFailure, fieldsNeedingReview } from '../ai/documentReader.js';
 import * as documents from '../models/documents.js';
@@ -36,6 +36,16 @@ export function createDocumentService({ db, config, storage, reader, ledger, inv
     const document = documents.findDocument(db, companyId, documentId);
     if (!document) throw notFound('Document not found.');
     return document;
+  }
+
+  /**
+   * Whether the document still has the record it created. Deleting that
+   * transaction or draft invoice sets the link to NULL but keeps the
+   * confirmation (API_CONTRACT.md §9.7); the document is then free to be
+   * confirmed again, re-extracted or deleted instead of being stuck.
+   */
+  function isConfirmed(document) {
+    return Boolean(document.confirmedAt && (document.transactionId || document.invoiceId));
   }
 
   function present(companyId, document, { withExtraction = true } = {}) {
@@ -151,7 +161,7 @@ export function createDocumentService({ db, config, storage, reader, ledger, inv
       if (!detected || !config.storage.allowedMimeTypes.includes(detected)) {
         throw unsupportedMediaType('Upload a PDF or an image (JPEG, PNG, WebP, GIF or HEIC).');
       }
-      if (declaredType !== detected) {
+      if (!declaredTypeMatches(declaredType, detected)) {
         throw new AppError('UNSUPPORTED_MEDIA_TYPE', 'The file content does not match its declared type.', [
           { field: 'file', issue: `declared ${declaredType || 'no type'} but the content is ${detected}` },
         ]);
@@ -206,7 +216,7 @@ export function createDocumentService({ db, config, storage, reader, ledger, inv
       const current = reader.capability();
       if (!current.available) throw new AppError('AI_UNAVAILABLE', current.note);
       if (document.status === 'processing') throw conflict('The document is already being processed.');
-      if (document.confirmedAt) throw unprocessable('A confirmed document cannot be re-extracted.', [{ field: 'status', issue: 'document is confirmed' }]);
+      if (isConfirmed(document)) throw unprocessable('A confirmed document cannot be re-extracted.', [{ field: 'status', issue: 'document is confirmed' }]);
       documents.restartProcessing(db, companyId, documentId, nowIsoTimestamp());
       const response = respond(companyId, requireDocument(companyId, documentId));
       schedule(companyId, documentId);
@@ -223,7 +233,7 @@ export function createDocumentService({ db, config, storage, reader, ledger, inv
       return db.transaction(() => {
         const document = requireDocument(companyId, documentId);
         if (document.status === 'processing') throw conflict('The document is still being processed.');
-        if (document.confirmedAt) throw conflict('The document is already confirmed.', [{ field: 'status', issue: `confirmed as ${document.confirmedTarget}` }]);
+        if (isConfirmed(document)) throw conflict('The document is already confirmed.', [{ field: 'status', issue: `confirmed as ${document.confirmedTarget}` }]);
         const now = nowIsoTimestamp();
 
         if (input.target === 'transaction') {
@@ -246,7 +256,7 @@ export function createDocumentService({ db, config, storage, reader, ledger, inv
     /** Delete an unconfirmed document, its extractions and its stored file. */
     async remove(companyId, documentId) {
       const document = requireDocument(companyId, documentId);
-      if (document.confirmedAt) {
+      if (isConfirmed(document)) {
         throw unprocessable('A confirmed document cannot be deleted.', [{ field: 'status', issue: `confirmed as ${document.confirmedTarget}` }]);
       }
       documents.deleteDocument(db, companyId, documentId);

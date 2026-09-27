@@ -46,6 +46,12 @@ export function createRateLimiter({ now = Date.now } = {}) {
       else windows.set(key, { count: 1, resetAt: now() + windowMs });
     },
 
+    /** Take back one attempt recorded by hit() (an attempt that did not count). */
+    release(key) {
+      const window = current(key);
+      if (window && --window.count <= 0) windows.delete(key);
+    },
+
     clear(key) {
       windows.delete(key);
     },

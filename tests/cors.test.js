@@ -30,6 +30,20 @@ test('the configured frontend origin is echoed and credentials are allowed', asy
   assert.match(response.headers.get('vary') ?? '', /Origin/);
 });
 
+test('headers the frontend must read are exposed to the configured origin', async (t) => {
+  const { request, close } = await createTestApp();
+  t.after(close);
+
+  const response = await request('GET', '/api/v1/health', {
+    headers: { Origin: FRONTEND_ORIGIN },
+  });
+
+  const exposed = (response.headers.get('access-control-expose-headers') ?? '').split(',').map((name) => name.trim().toLowerCase());
+  for (const name of ['retry-after', 'x-request-id', 'location', 'content-disposition']) {
+    assert.ok(exposed.includes(name), `${name} is exposed`);
+  }
+});
+
 test('a credentialed request from the configured origin succeeds', async (t) => {
   const { request, close } = await createTestApp();
   t.after(close);

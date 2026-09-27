@@ -58,6 +58,10 @@ export function createApp({ config, db, logger: providedLogger, services: servic
   const handler = async (req, res) => {
     try {
       contextMiddleware(req, res);
+      if (config.server.trustProxy) {
+        const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').map((part) => part.trim()).filter(Boolean);
+        if (forwarded.length) req.forwardedIp = forwarded.at(-1);
+      }
 
       const corsOutcome = corsMiddleware(req, res);
       if (corsOutcome === 'stop' || res.writableEnded) return;

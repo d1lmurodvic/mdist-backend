@@ -63,6 +63,22 @@ test('every approved image format is accepted by its signature', async (t) => {
   }
 });
 
+test('a generic, missing or alias declared type is accepted when the bytes are an approved type', async (t) => {
+  const { request, token, close } = await setup();
+  t.after(close);
+  for (const [label, file, expected] of [
+    ['HEIC sent as octet-stream', { filename: 'photo.heic', type: 'application/octet-stream', bytes: SAMPLES.heic }, 'image/heic'],
+    ['PDF with no Content-Type', { filename: 'scan.pdf', type: '', bytes: SAMPLES.pdf }, 'application/pdf'],
+    ['JPEG declared as image/jpg', { filename: 'shot.jpg', type: 'image/jpg', bytes: SAMPLES.jpeg }, 'image/jpeg'],
+    ['PNG declared with a parameter', { filename: 'a.png', type: 'IMAGE/PNG; charset=binary', bytes: SAMPLES.png }, 'image/png'],
+  ]) {
+    const response = await uploadFile(request, token, file);
+    assert.equal(response.status, 201, `${label}: ${response.raw}`);
+    assert.equal(response.data.mimeType, expected, label);
+    await settled(request, token, response.data.id);
+  }
+});
+
 test('unsupported, disguised and mismatched files are refused with 415 and nothing is stored', async (t) => {
   const { request, token, uploadDir, db, close } = await setup();
   t.after(close);

@@ -22,9 +22,9 @@ export function readBearerToken(req) {
   return match[1];
 }
 
-/** The peer address. Proxy headers are not trusted: no proxy is configured. */
+/** The client address: the peer, or the proxy-reported one when TRUST_PROXY is on (set in app.js). */
 export function clientIp(req) {
-  return req.socket?.remoteAddress ?? null;
+  return req.forwardedIp ?? req.socket?.remoteAddress ?? null;
 }
 
 export function authenticate({ authService }) {

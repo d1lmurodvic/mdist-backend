@@ -4,8 +4,28 @@
  * The client's Content-Type and filename are claims; the bytes are evidence.
  * An upload is accepted only when its signature is one of the approved types
  * (config.storage.allowedMimeTypes) AND agrees with the declared MIME type and
- * the filename extension, so a renamed executable cannot pass as a PDF.
+ * the filename extension, so a renamed executable cannot pass as a PDF. A
+ * generic declared type (what clients send when they do not know the type) is
+ * not a claim, so it agrees with any detected type.
  */
+
+/** Declared types that say "unknown" rather than naming a type. text/plain is
+ * what a multipart file part without a Content-Type is read as. */
+const GENERIC_DECLARED_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream', 'text/plain']);
+
+/** Non-standard spellings clients send for an approved type. */
+const DECLARED_TYPE_ALIASES = Object.freeze({
+  'image/jpg': 'image/jpeg',
+  'image/pjpeg': 'image/jpeg',
+  'image/heif': 'image/heic',
+});
+
+/** Whether a client's declared MIME type is consistent with the detected one. */
+export function declaredTypeMatches(declaredType, detected) {
+  const declared = String(declaredType ?? '').split(';')[0].trim().toLowerCase();
+  if (GENERIC_DECLARED_TYPES.has(declared)) return true;
+  return (DECLARED_TYPE_ALIASES[declared] ?? declared) === detected;
+}
 
 /** mimeType -> { extensions it may carry, the extension it is stored with }. */
 export const UPLOAD_TYPES = Object.freeze({

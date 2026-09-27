@@ -79,6 +79,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(0).max(65535).default(4000),
   HOST: z.string().min(1).default('127.0.0.1'),
+  // Behind one reverse proxy (e.g. Render): take the client address from the
+  // last X-Forwarded-For entry, the one the proxy itself appended.
+  TRUST_PROXY: envBoolean(false),
   CORS_ALLOWED_ORIGINS: corsOrigins,
 
   DATABASE_PATH: z.string().min(1).default('data/ifrsmart.sqlite'),
@@ -171,6 +174,7 @@ export function loadConfig(source = process.env) {
     server: Object.freeze({
       port: env.PORT,
       host: env.HOST,
+      trustProxy: env.TRUST_PROXY,
       corsAllowedOrigins: Object.freeze(env.CORS_ALLOWED_ORIGINS),
     }),
 

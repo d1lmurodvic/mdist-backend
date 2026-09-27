@@ -48,16 +48,17 @@ async function main() {
 
   const app = await startServer({ config, db, logger });
 
-  const shutdown = (signal) => {
+  // A crash exits non-zero so supervisors (systemd, Docker on-failure) restart it.
+  const shutdown = (signal, exitCode = 0) => {
     logger.info('shutting down', { signal });
     app.server.close(() => {
       db.close();
-      process.exit(0);
+      process.exit(exitCode);
     });
     // Do not hang forever on lingering keep-alive connections.
     setTimeout(() => {
       db.close();
-      process.exit(0);
+      process.exit(exitCode);
     }, 5000).unref();
   };
 
@@ -69,7 +70,7 @@ async function main() {
   });
   process.on('uncaughtException', (error) => {
     logger.error('uncaught exception', { error });
-    shutdown('uncaughtException');
+    shutdown('uncaughtException', 1);
   });
 }
 

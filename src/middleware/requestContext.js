@@ -99,6 +99,9 @@ export function cors({ allowedOrigins }) {
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id, Idempotency-Key');
       res.setHeader('Access-Control-Max-Age', '600');
+      // Response headers the frontend reads (429 wait time, request id for
+      // support, register Location, download filename).
+      res.setHeader('Access-Control-Expose-Headers', 'Retry-After, X-Request-Id, Location, Content-Disposition');
     }
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
