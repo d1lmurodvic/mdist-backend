@@ -1,18 +1,16 @@
 # Render Blueprint for the Accora API (New > Blueprint > this repository).
-# SQLite and uploaded documents live on the persistent disk, so data survives
-# restarts and deploys. A persistent disk needs a paid instance (Starter).
+# FREE plan: no persistent disk, so the SQLite database and uploaded documents
+# are EPHEMERAL — wiped on every deploy or restart. Fine for a demo. For real
+# data, switch plan to starter and add a disk mounted at /var/data (see git
+# history for that variant), pointing DATABASE_PATH/UPLOAD_DIR at it.
 services:
   - type: web
     name: accora-backend
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci --omit=dev
     startCommand: npm run migrate && npm start
     healthCheckPath: /api/v1/health
-    disk:
-      name: accora-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_VERSION
         value: "24"
@@ -23,9 +21,9 @@ services:
       - key: TRUST_PROXY
         value: "true"
       - key: DATABASE_PATH
-        value: /var/data/accora.sqlite
+        value: data/accora.sqlite
       - key: UPLOAD_DIR
-        value: /var/data/uploads
+        value: uploads
       # 64 MiB per password hash keeps concurrent logins within 512 MB of memory.
       - key: SCRYPT_COST
         value: "65536"
