@@ -115,7 +115,18 @@ const envSchema = z.object({
   AI_MODEL: z.string().default(''),
   AI_BASE_URL: z.string().default(''),
   AI_DAILY_CALL_CAP_PER_COMPANY: z.coerce.number().int().min(0).default(50),
+
+  // Google Document AI (AI_PROVIDER=google_document_ai). Credentials come from
+  // the same sources Google's own libraries read: a key file path or its JSON.
+  GOOGLE_CLOUD_PROJECT: z.string().default(''),
+  DOCUMENT_AI_LOCATION: z.string().default('us'),
+  DOCUMENT_AI_INVOICE_PROCESSOR_ID: z.string().default(''),
+  DOCUMENT_AI_EXPENSE_PROCESSOR_ID: z.string().default(''),
+  GOOGLE_APPLICATION_CREDENTIALS: z.string().default(''),
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: z.string().default(''),
 });
+
+export const GOOGLE_DOCUMENT_AI_PROVIDER = 'google_document_ai';
 
 /**
  * Build a frozen config object from an environment map.
@@ -137,7 +148,31 @@ export function loadConfig(source = process.env) {
   // runtime failures instead of a truthful "unavailable".
   const aiProvider = env.AI_PROVIDER.trim();
   const aiConfigured = aiProvider !== '';
-  if (aiConfigured) {
+  const google = Object.freeze({
+    projectId: env.GOOGLE_CLOUD_PROJECT.trim(),
+    location: env.DOCUMENT_AI_LOCATION.trim() || 'us',
+    invoiceProcessorId: env.DOCUMENT_AI_INVOICE_PROCESSOR_ID.trim(),
+    expenseProcessorId: env.DOCUMENT_AI_EXPENSE_PROCESSOR_ID.trim(),
+    credentialsFile: env.GOOGLE_APPLICATION_CREDENTIALS.trim(),
+    credentialsJson: env.GOOGLE_APPLICATION_CREDENTIALS_JSON.trim(),
+  });
+  if (aiProvider === GOOGLE_DOCUMENT_AI_PROVIDER) {
+    // Google Document AI does not use AI_API_KEY/AI_MODEL: it needs a project,
+    // at least one processor and Google credentials.
+    const missing = [];
+    if (!google.projectId) missing.push('GOOGLE_CLOUD_PROJECT');
+    if (!google.invoiceProcessorId && !google.expenseProcessorId) {
+      missing.push('DOCUMENT_AI_INVOICE_PROCESSOR_ID or DOCUMENT_AI_EXPENSE_PROCESSOR_ID');
+    }
+    if (!google.credentialsFile && !google.credentialsJson) {
+      missing.push('GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS_JSON');
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `Invalid configuration:\n${missing.map((name) => `  - AI_PROVIDER is set to "${aiProvider}" but ${name} is missing`).join('\n')}`,
+      );
+    }
+  } else if (aiConfigured) {
     const missing = [];
     if (!env.AI_API_KEY.trim()) missing.push('AI_API_KEY');
     if (!env.AI_MODEL.trim()) missing.push('AI_MODEL');
@@ -222,6 +257,10 @@ export function loadConfig(source = process.env) {
       model: env.AI_MODEL,
       baseUrl: env.AI_BASE_URL,
       dailyCallCapPerCompany: env.AI_DAILY_CALL_CAP_PER_COMPANY,
+      google: Object.freeze({
+        ...google,
+        credentialsFile: google.credentialsFile ? resolveFromRoot(google.credentialsFile) : '',
+      }),
     }),
   });
 }

@@ -34,3 +34,20 @@ services:
       # The frontend origin(s), e.g. https://accora.vercel.app (no trailing slash).
       - key: CORS_ALLOWED_ORIGINS
         sync: false
+      # --- Google Document AI (optional) ---
+      # Leave AI_PROVIDER empty to run without document reading. To enable, set
+      # it to google_document_ai and fill the rest in the Render dashboard.
+      # There is no disk for a key file on deploy: paste the service-account
+      # key JSON (the whole file content) into GOOGLE_APPLICATION_CREDENTIALS_JSON.
+      - key: AI_PROVIDER
+        value: ""
+      - key: GOOGLE_CLOUD_PROJECT
+        sync: false
+      - key: DOCUMENT_AI_LOCATION
+        value: us
+      - key: DOCUMENT_AI_INVOICE_PROCESSOR_ID
+        sync: false
+      - key: DOCUMENT_AI_EXPENSE_PROCESSOR_ID
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS_JSON
+        sync: false

@@ -5,8 +5,8 @@
  *
  *   documents service ──▶ documentReader ──▶ provider adapter (optional)
  *
- * - Adapters are looked up by the configured AI_PROVIDER name. None ships
- *   yet: no OCR/vision vendor is approved (AI_CONTEXT.md §7, phase D), so the
+ * - Adapters are looked up by the configured AI_PROVIDER name. One ships:
+ *   Google Document AI (src/ai/google/). With no provider configured, the
  *   reader reports itself unavailable and the product falls back to manual
  *   entry. It never invents a value, a confidence or a document type.
  * - An adapter's output is external input: it is validated here (strict
@@ -24,22 +24,24 @@
 import { z } from 'zod';
 import { currencySchema, isoDateSchema } from '../lib/validate.js';
 import { MAX_SAFE_MINOR } from '../lib/money.js';
+import { ExtractionFailure } from './extractionFailure.js';
+import { createGoogleDocumentAiAdapter, GOOGLE_DOCUMENT_AI } from './google/documentAi.js';
 
-/** Vendor adapters by AI_PROVIDER name. None is implemented or approved yet. */
-export const DOCUMENT_READER_ADAPTERS = Object.freeze({});
+export { ExtractionFailure };
+
+/**
+ * Vendor adapters by AI_PROVIDER name. An entry is either an adapter instance
+ * or a factory `(config) => adapter` built at startup (so bad credentials
+ * stop startup, not the first upload).
+ */
+export const DOCUMENT_READER_ADAPTERS = Object.freeze({
+  [GOOGLE_DOCUMENT_AI]: (config) => createGoogleDocumentAiAdapter({ settings: config.ai.google }),
+});
 
 /** How long one provider call may take before the document fails. */
 export const EXTRACTION_TIMEOUT_MS = 60_000;
 /** Below this confidence a field is flagged for review (PRD #10). */
 export const REVIEW_CONFIDENCE_THRESHOLD = 0.8;
-
-/** A failure the document records; `code` is the documents.failure_code value. */
-export class ExtractionFailure extends Error {
-  constructor(code, message) {
-    super(message);
-    this.code = code;
-  }
-}
 
 const confidence = z.number().min(0).max(1);
 const minorUnits = z.number().int().min(0).max(Number(MAX_SAFE_MINOR));
@@ -53,19 +55,36 @@ const field = (valueSchema) =>
       message: 'confidence must be given exactly when a value is',
     });
 
-const lineItem = z.strictObject({
-  description: z.string().trim().min(1).max(500),
-  quantity: z.number().int().min(1).max(1_000_000),
-  unitPrice: money,
-  taxRate: z.number().int().min(0).max(10000).nullable(),
-});
+/** Quantities are at most thousandths (a provider may read "1,5 kg"). */
+const quantity = z
+  .number()
+  .gt(0)
+  .max(1_000_000)
+  .refine((value) => Math.abs(value * 1000 - Math.round(value * 1000)) < 1e-6, {
+    message: 'quantity has at most three decimal places',
+  });
+
+/** A line may be partial (kept for review), but never entirely empty. */
+const lineItem = z
+  .strictObject({
+    description: z.string().trim().min(1).max(500).nullable(),
+    quantity: quantity.nullable(),
+    unitPrice: money.nullable(),
+    taxRate: z.number().int().min(0).max(10000).nullable(),
+  })
+  .refine((line) => line.description !== null || line.quantity !== null || line.unitPrice !== null, {
+    message: 'a line item needs a description, quantity or unit price',
+  });
 
 export const providerResultSchema = z.discriminatedUnion('readable', [
   z.strictObject({ readable: z.literal(false) }),
   z.strictObject({
     readable: z.literal(true),
     documentType: field(z.enum(['invoice', 'receipt'])),
+    invoiceNumber: field(z.string().trim().min(1).max(100)),
     date: field(isoDateSchema),
+    dueDate: field(isoDateSchema),
+    currency: field(currencySchema),
     subtotal: field(money),
     tax: field(money),
     total: field(money),
@@ -75,7 +94,10 @@ export const providerResultSchema = z.discriminatedUnion('readable', [
   }),
 ]);
 
-export const EXTRACTED_FIELDS = Object.freeze(['documentType', 'date', 'subtotal', 'tax', 'total', 'vendor', 'customer', 'lineItems']);
+export const EXTRACTED_FIELDS = Object.freeze([
+  'documentType', 'invoiceNumber', 'date', 'dueDate', 'currency',
+  'subtotal', 'tax', 'total', 'vendor', 'customer', 'lineItems',
+]);
 
 /**
  * Fields a person must look at: missing, below the confidence threshold, or
@@ -85,9 +107,10 @@ export function fieldsNeedingReview(fields, companyCurrency) {
   const review = [];
   for (const name of EXTRACTED_FIELDS) {
     const { value, confidence: score } = fields[name];
+    const statedCurrency = name === 'currency' ? value : value?.currency;
     if (value === null) review.push({ field: name, reason: 'missing' });
     else if (score < REVIEW_CONFIDENCE_THRESHOLD) review.push({ field: name, reason: 'low_confidence' });
-    else if (value?.currency && value.currency !== companyCurrency) review.push({ field: name, reason: 'currency_mismatch' });
+    else if (statedCurrency && statedCurrency !== companyCurrency) review.push({ field: name, reason: 'currency_mismatch' });
   }
   return review;
 }
@@ -106,7 +129,9 @@ function withTimeout(run, timeoutMs) {
 
 export function createDocumentReader({ config, adapters = DOCUMENT_READER_ADAPTERS, timeoutMs = EXTRACTION_TIMEOUT_MS }) {
   const provider = config.ai.enabled ? config.ai.provider : null;
-  const adapter = provider ? adapters[provider] ?? null : null;
+  const entry = provider ? adapters[provider] ?? null : null;
+  // A factory entry is built now, so misconfiguration fails at startup.
+  const adapter = typeof entry === 'function' ? entry(config) : entry;
 
   const unavailableNote = provider
     ? `Automated extraction is unavailable: no document reader exists for AI provider "${provider}". Enter the details manually.`
@@ -116,7 +141,7 @@ export function createDocumentReader({ config, adapters = DOCUMENT_READER_ADAPTE
     /** What the capability can do right now, for capability disclosure. */
     capability() {
       return adapter
-        ? { available: true, method: 'ai', provider, note: null }
+        ? { available: true, method: 'ai', provider, note: adapter.description ?? null }
         : { available: false, method: 'unavailable', provider, note: unavailableNote };
     },
 

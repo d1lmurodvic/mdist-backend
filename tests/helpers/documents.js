@@ -90,7 +90,10 @@ export function providerResult(overrides = {}) {
   return {
     readable: true,
     documentType: { value: 'receipt', confidence: 0.97 },
+    invoiceNumber: { value: 'INV-0042', confidence: 0.95 },
     date: { value: '2025-03-14', confidence: 0.93 },
+    dueDate: { value: '2025-04-13', confidence: 0.9 },
+    currency: { value: 'UZS', confidence: 0.92 },
     subtotal: { value: uzs(35000), confidence: 0.9 },
     tax: { value: uzs(4200), confidence: 0.88 },
     total: { value: uzs(39200), confidence: 0.96 },

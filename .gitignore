@@ -6,6 +6,10 @@ node_modules/
 .env.local
 .env.*.local
 
+# Google service-account keys — never commit credentials
+service-account.json
+*-service-account.json
+
 # Database (SQLite files are generated from migrations)
 data/
 *.sqlite

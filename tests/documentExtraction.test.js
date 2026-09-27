@@ -98,7 +98,7 @@ test('provider failures end in failed, with a safe message and no stored fields'
     ['invalid_provider_response', staticAdapter(providerResult({ vendor: { value: null, confidence: 0.4 } }))],
     ['invalid_provider_response', staticAdapter(providerResult({ tax: { value: { amount: 10, currency: 'UZS' }, confidence: null } }))],
     ['invalid_provider_response', staticAdapter({ ...providerResult(), inventedField: 'x' })],
-    ['invalid_provider_response', staticAdapter(providerResult({ lineItems: { value: [{ description: 'x', quantity: 1.5, unitPrice: uzs(1), taxRate: 0 }], confidence: 0.9 } }))],
+    ['invalid_provider_response', staticAdapter(providerResult({ lineItems: { value: [{ description: 'x', quantity: 1.0005, unitPrice: uzs(1), taxRate: 0 }], confidence: 0.9 } }))],
     ['invalid_provider_response', staticAdapter('not an object')],
   ];
   for (const [code, adapter] of cases) {
